@@ -1,6 +1,8 @@
 #ifndef PID_H
 #define PID_H
 
+#include <cstdint>
+
 class PID {
 public:
   /*
@@ -12,11 +14,14 @@ public:
 
   /*
   * Coefficients
-  */ 
+  */
   double Kp;
   double Ki;
   double Kd;
 
+  bool initialized;
+  uint64_t counter;
+  double accumulative_error;
   /*
   * Constructor
   */

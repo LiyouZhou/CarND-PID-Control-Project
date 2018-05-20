@@ -2,3 +2,8 @@
 build
 tags
 .editorconfig
+CMakeFiles/*
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+pid

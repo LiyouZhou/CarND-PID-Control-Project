@@ -3,6 +3,9 @@
 #include "json.hpp"
 #include "PID.h"
 #include <math.h>
+#include "twiddle.h"
+
+#define TWIDDLE_TRIAL_SAMPLES 3000
 
 // for convenience
 using json = nlohmann::json;
@@ -33,9 +36,9 @@ int main()
   uWS::Hub h;
 
   PID pid;
-  // TODO: Initialize the pid variable.
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+    static double distance = 0;
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -47,26 +50,49 @@ int main()
         std::string event = j[0].get<std::string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
+          // std::cout << j[1] << std::endl;
           double cte = std::stod(j[1]["cte"].get<std::string>());
           double speed = std::stod(j[1]["speed"].get<std::string>());
-          double angle = std::stod(j[1]["steering_angle"].get<std::string>());
+          // double angle = std::stod(j[1]["steering_angle"].get<std::string>());
           double steer_value;
           /*
-          * TODO: Calcuate steering value here, remember the steering value is
+          * TODO: Calculate steering value here, remember the steering value is
           * [-1, 1].
           * NOTE: Feel free to play around with the throttle and speed. Maybe use
           * another PID controller to control the speed!
           */
-          
-          // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
+          pid.UpdateError(cte);
+          steer_value = pid.TotalError();
 
-          json msgJson;
-          msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
-          auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
-          ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          // calculate the on road distance
+          if (fabs(cte) < 4.2) {
+            distance += speed;
+          }
+
+          // fail immediately if car is stuck
+          if (pid.Kp == 0.0 || (distance > 10 && speed < 0.1)) {
+            pid.accumulative_error = pid.accumulative_error/pid.counter * TWIDDLE_TRIAL_SAMPLES;
+            pid.counter = TWIDDLE_TRIAL_SAMPLES;
+          }
+
+          if (pid.counter == TWIDDLE_TRIAL_SAMPLES) {
+            pid.accumulative_error /= distance;
+            distance = 0;
+            twiddle_state_machine(ws, pid);
+          } else { // normal driving
+            if (steer_value < -1) steer_value = -1;
+            if (steer_value > 1) steer_value = 1;
+
+            // DEBUG
+            // std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
+
+            json msgJson;
+            msgJson["steering_angle"] = steer_value;
+            msgJson["throttle"] = (speed > 20)? 0.0 : 0.3;
+            auto msg = "42[\"steer\"," + msgJson.dump() + "]";
+            // std::cout << msg << std::endl;
+            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          }
         }
       } else {
         // Manual driving
@@ -92,10 +118,12 @@ int main()
   });
 
   h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
+    (void ) h;
     std::cout << "Connected!!!" << std::endl;
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code, char *message, size_t length) {
+    (void ) h;
     ws.close();
     std::cout << "Disconnected" << std::endl;
   });

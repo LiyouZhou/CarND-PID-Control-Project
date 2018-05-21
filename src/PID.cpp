@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 using namespace std;
-#define INTEGRAL_LIMIT 0.5
+#define INTEGRAL_LIMIT 1
 /*
 * TODO: Complete the PID class.
 */
@@ -36,19 +36,16 @@ void PID::UpdateError(double cte)
     d_error = cte - p_error;
     p_error = cte;
     i_error += cte;
+
+    // avoid integral wind up by limiting the integral term
+    if (i_error > INTEGRAL_LIMIT) i_error = INTEGRAL_LIMIT;
+    if (i_error < -INTEGRAL_LIMIT) i_error = -INTEGRAL_LIMIT;
 }
 
 double PID::TotalError()
 {
     counter++;
-    double i_term = i_error * Ki;
-
-    // avoid integral wind up by limiting the integral term
-    if (i_term > INTEGRAL_LIMIT) i_term = INTEGRAL_LIMIT;
-    if (i_term < -INTEGRAL_LIMIT) i_term = -INTEGRAL_LIMIT;
-
-    double err = -(p_error * Kp + i_term + d_error * Kd);
-
+    double err = -(p_error * Kp + i_error * Ki + d_error * Kd);
     // printf("-(%f * %f + %f * %f + %f * %f) = %f", p_error, Kp, i_error, Ki, d_error, Kd, err);
     accumulative_error += fabs(err);
     return err;

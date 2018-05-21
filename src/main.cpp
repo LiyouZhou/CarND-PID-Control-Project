@@ -5,8 +5,6 @@
 #include <math.h>
 #include "twiddle.h"
 
-#define TWIDDLE_TRIAL_SAMPLES 3000
-
 // for convenience
 using json = nlohmann::json;
 
@@ -31,13 +29,40 @@ std::string hasData(std::string s) {
   return "";
 }
 
-int main()
+int main(int argc, char *argv[])
 {
   uWS::Hub h;
-
   PID pid;
+  uint32_t twiddle_trial_samples = 3000;
+  uint32_t twiddle_on = false;
+  double coeffs[3] = {0};
+  float target_speed = 0;
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  if (argc > 4) {
+    for (int i = 0; i < 3; i++) coeffs[i] = std::stod(argv[i+1]);
+    pid.Init(coeffs[0], coeffs[1], coeffs[2]);
+    target_speed = std::stof(argv[4]);
+    printf("PID Init values, Kp %f Ki %f Kd %f\r\n", pid.Kp, pid.Ki, pid.Kd);
+    printf("target_speed %f\r\n", target_speed);
+  }
+
+  if (argc >= 11) {
+    double d_coeffs[3] = {std::stod(argv[5]),
+                          std::stod(argv[6]),
+                          std::stod(argv[7])};
+    double twiddle_descent_ratio = std::stod(argv[8]);
+    double tolerance = std::stod(argv[9]);
+    twiddle_trial_samples = std::atoi(argv[10]);
+    twiddle_init(coeffs, d_coeffs, twiddle_descent_ratio, tolerance);
+    twiddle_on = true;
+    printf("d_coeffs %f %f %f\r\n", d_coeffs[0], d_coeffs[1], d_coeffs[2]);
+    printf("twiddle_descent_ratio %f\r\n", twiddle_descent_ratio);
+    printf("tolerance %f\r\n", tolerance);
+    printf("twiddle_trial_samples %u\r\n", twiddle_trial_samples);
+  }
+
+  h.onMessage([&pid, twiddle_on, twiddle_trial_samples, target_speed]
+              (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     static double distance = 0;
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -64,35 +89,53 @@ int main()
           pid.UpdateError(cte);
           steer_value = pid.TotalError();
 
-          // calculate the on road distance
-          if (fabs(cte) < 4.2) {
-            distance += speed;
+          if (twiddle_on) { // run twiddle algorithm
+            // infer the distance travelled by the car on
+            // road by integrating the speed.
+            if (fabs(cte) < 4.2) {
+              distance += speed;
+            }
+
+            // fail early there is no proportional control or if car is stuck
+            if (pid.Kp == 0.0 || (distance > 10 && speed < 0.1)) {
+              // extrapolate error
+              pid.accumulative_error = pid.accumulative_error/pid.counter * twiddle_trial_samples;
+              pid.counter = twiddle_trial_samples;
+            }
+
+            if (pid.counter == twiddle_trial_samples) {
+              // devise the goodness parameter for twiddle
+              double goodness = pid.accumulative_error / distance;
+              twiddle_set_goodness(goodness);
+              distance = 0;
+              twiddle_state_machine(ws, pid);
+            }
           }
 
-          // fail immediately if car is stuck
-          if (pid.Kp == 0.0 || (distance > 10 && speed < 0.1)) {
-            pid.accumulative_error = pid.accumulative_error/pid.counter * TWIDDLE_TRIAL_SAMPLES;
-            pid.counter = TWIDDLE_TRIAL_SAMPLES;
+          if (steer_value < -1) steer_value = -1;
+          if (steer_value > 1) steer_value = 1;
+
+          // DEBUG
+          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << " ";
+
+          std::cout << " " << pid.p_error << " " << pid.i_error << " " << pid.d_error << std::endl;
+          // some simple rules for controlling throttle
+          float throttle = 0;
+          if (fabs(cte) > 4.0 && !twiddle_on) { // going off road
+            printf("break\r\n");
+            throttle = -1;
+          } else if (cte/fabs(cte)*pid.d_error > 0.05  && !twiddle_on && speed > 10) { // error increasing rapidly
+            printf("break slightly\r\n");
+            throttle = -0.5;
+          } else if (speed < target_speed) { // speed too slow
+            throttle = 1;
           }
-
-          if (pid.counter == TWIDDLE_TRIAL_SAMPLES) {
-            pid.accumulative_error /= distance;
-            distance = 0;
-            twiddle_state_machine(ws, pid);
-          } else { // normal driving
-            if (steer_value < -1) steer_value = -1;
-            if (steer_value > 1) steer_value = 1;
-
-            // DEBUG
-            // std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
-
-            json msgJson;
-            msgJson["steering_angle"] = steer_value;
-            msgJson["throttle"] = (speed > 20)? 0.0 : 0.3;
-            auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-            // std::cout << msg << std::endl;
-            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          }
+          json msgJson;
+          msgJson["steering_angle"] = steer_value;
+          msgJson["throttle"] = throttle;
+          auto msg = "42[\"steer\"," + msgJson.dump() + "]";
+          // std::cout << msg << std::endl;
+          ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
         // Manual driving

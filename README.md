@@ -60,4 +60,5 @@ This [videos](https://youtu.be/efuUPviqgTo) shows the twiddle algorithm running.
 Kp = 0.06, Ki = 0.01, Kd = 0.4.
 
 ![Car drive around the track](https://media.giphy.com/media/3baTNQklNxdoyjjSgE/giphy.gif)
+
 Full video can be found [here](https://youtu.be/fndTk8xGfPQ). The vehicle is able to drive around the track without leaving the road but had to slow down significantly during corners. The PID controller fails significantly during corners as it deals with corners the same way as it deals with straight bits.

@@ -57,7 +57,7 @@ The compiled binary takes a number of parameters
 ## Result
 
 This [videos](https://youtu.be/efuUPviqgTo) shows the twiddle algorithm running. You can see the car gradually start to follow the road successfully. Due to time concerns, the algorithm is only run over a small section of the road which was mostly straight. Hence the tuned parameters did not fair well during corners, hence extra manual tuning is done and the final parameters are:
-Kp = 0.06, Ki = 0.01, Kd = 0.4.
+Kp = 0.06, Ki = 0.001, Kd = 0.4.
 
 ![Car drive around the track](https://media.giphy.com/media/3baTNQklNxdoyjjSgE/giphy.gif)
 

@@ -43,7 +43,9 @@ To help the vehicle deal with difficult corners a few simple rules are implement
 
 The compiled binary takes a number of parameters
 ```sh
-# Running PID directly
+# Running PID with default parameters: Kp = 0.08, Ki = 0.0001, Kd = 4, target_speed = 100
+./pid
+# Running PID with custom parameters
 ./pid <Kp> <Ki> <Kd> <target_speed>
 # Running Twiddle tuning
 ./pid <Initial Kp> <Initial Ki> <Initial Kd> <target_speed>

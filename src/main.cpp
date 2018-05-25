@@ -38,14 +38,19 @@ int main(int argc, char *argv[])
   double coeffs[3] = {0};
   float target_speed = 0;
 
+  // parse PID parameters from command line
   if (argc > 4) {
     for (int i = 0; i < 3; i++) coeffs[i] = std::stod(argv[i+1]);
     pid.Init(coeffs[0], coeffs[1], coeffs[2]);
     target_speed = std::stof(argv[4]);
     printf("PID Init values, Kp %f Ki %f Kd %f\r\n", pid.Kp, pid.Ki, pid.Kd);
     printf("target_speed %f\r\n", target_speed);
+  } else { // initialise controller with sensible default
+    pid.Init(0.08, 0.0001, 4);
+    target_speed = 100;
   }
 
+  // parse twiddle algorithm parameters from command line
   if (argc >= 11) {
     double d_coeffs[3] = {std::stod(argv[5]),
                           std::stod(argv[6]),
@@ -80,48 +85,49 @@ int main(int argc, char *argv[])
           double speed = std::stod(j[1]["speed"].get<std::string>());
           // double angle = std::stod(j[1]["steering_angle"].get<std::string>());
           double steer_value;
-          /*
-          * TODO: Calculate steering value here, remember the steering value is
-          * [-1, 1].
-          * NOTE: Feel free to play around with the throttle and speed. Maybe use
-          * another PID controller to control the speed!
-          */
+
+          // use PID controller to set steering_value based on the cte
           pid.UpdateError(cte);
           steer_value = pid.TotalError();
 
           if (twiddle_on) { // run twiddle algorithm
-            // infer the distance travelled by the car on
-            // road by integrating the speed.
+            // infer the distance travelled by the car on road by integrating the speed.
             if (fabs(cte) < 4.2) {
               distance += speed;
             }
 
-            // fail early there is no proportional control or if car is stuck
+            // fail early if there is no proportional control or if car is stuck
             if (pid.Kp == 0.0 || (distance > 10 && speed < 0.1)) {
               // extrapolate error
               pid.accumulative_error = pid.accumulative_error/pid.counter * twiddle_trial_samples;
               pid.counter = twiddle_trial_samples;
             }
 
+            // end of trial run, update results to twiddle engine
             if (pid.counter == twiddle_trial_samples) {
               // devise the goodness parameter for twiddle
               double goodness = pid.accumulative_error / distance;
               twiddle_set_goodness(goodness);
+
+              // reset distance before next trail run
               distance = 0;
+
+              // start twiddle state machine
               twiddle_state_machine(ws, pid);
             }
           }
 
+          // trim steering_value to [-1 1]
           if (steer_value < -1) steer_value = -1;
           if (steer_value > 1) steer_value = 1;
 
           // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << " ";
+          // std::cout << "CTE: " << cte << " Steering Value: " << steer_value << " ";
+          // std::cout << " " << pid.p_error << " " << pid.i_error << " " << pid.d_error << std::endl;
 
-          std::cout << " " << pid.p_error << " " << pid.i_error << " " << pid.d_error << std::endl;
           // some simple rules for controlling throttle
           float throttle = 0;
-          if (fabs(cte) > 4.0 && !twiddle_on) { // going off road
+          if (fabs(cte) > 4.2 && !twiddle_on && speed > 10) { // going off road
             printf("break\r\n");
             throttle = -1;
           } else if (cte/fabs(cte)*pid.d_error > 0.05  && !twiddle_on && speed > 10) { // error increasing rapidly
@@ -130,6 +136,8 @@ int main(int argc, char *argv[])
           } else if (speed < target_speed) { // speed too slow
             throttle = 1;
           }
+
+          // return control signals back to the simulator
           json msgJson;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle;

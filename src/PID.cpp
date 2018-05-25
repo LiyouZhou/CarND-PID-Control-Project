@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 using namespace std;
-#define INTEGRAL_LIMIT 1
+#define INTEGRAL_LIMIT 10
 /*
 * TODO: Complete the PID class.
 */
@@ -33,6 +33,7 @@ void PID::Init(double Kp, double Ki, double Kd)
 
 void PID::UpdateError(double cte)
 {
+    // update p, i, d errors individually
     d_error = cte - p_error;
     p_error = cte;
     i_error += cte;
@@ -45,8 +46,12 @@ void PID::UpdateError(double cte)
 double PID::TotalError()
 {
     counter++;
+
+    // calculate the total error
     double err = -(p_error * Kp + i_error * Ki + d_error * Kd);
-    // printf("-(%f * %f + %f * %f + %f * %f) = %f", p_error, Kp, i_error, Ki, d_error, Kd, err);
+
+    // accumulative error used for goodness in the twiddle algorithm
     accumulative_error += fabs(err);
+
     return err;
 }
